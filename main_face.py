@@ -11,14 +11,19 @@ from torch.autograd import Variable
 from torchvision import datasets, transforms
 import torchvision.utils as vutils
 
+import matplotlib as mpl
+mpl.use('Agg')
 import matplotlib.pyplot as plt
 plt.style.use('bmh')
 
 parser = argparse.ArgumentParser(description='PyTorch Neural Style')
 parser.add_argument('--content', default='content.png', type=str, help='content image')
-parser.add_argument('--style', default='style.png', type=str, help='style image')
+#parser.add_argument('--style', default='style.png', type=str, help='style image')
+parser.add_argument('--data-dir', default='data', type=str, help='database dir name')
+#parser.add_argument('--input-image', default='image', type=str, help='input image name')
 parser.add_argument('--out-dir', default='out', type=str, help='output image name')
-parser.add_argument('--image-size', type=int, default=256, metavar='N', help='image size ')
+parser.add_argument('--batch-size', type=int, default=1, metavar='N', help='batch size ')
+parser.add_argument('--image-size', type=int, default=512, metavar='N', help='image size ')
 parser.add_argument('--epochs', type=int, default=20, metavar='N', help='num epochs ')
 parser.add_argument('--content-weight', default=1.0, type=float, help='content weight')
 parser.add_argument('--style-weight', default=1000, type=float, help='style weight')
@@ -31,7 +36,6 @@ parser.add_argument('--init', type=str, default='content', metavar='S',help='ini
 args = parser.parse_args()
 
 print (args)
-
 torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.set_device(args.gpu_id)
@@ -57,7 +61,7 @@ def content_loss(x, y, w):
 def style_loss(x, y, w):
     return mse_loss(gram_matrix(x)*w, gram_matrix(y)*w)
 
-image_transform = transforms.Compose([transforms.Scale(args.image_size), transforms.ToTensor()])
+image_transform = transforms.Compose([transforms.CenterCrop(args.image_size), transforms.ToTensor()])
 
 def image_loader(image_name):
     image = Image.open(image_name)
@@ -70,19 +74,55 @@ def image_loader(image_name):
 
 ## load images
 kwargs = {'num_workers': 1, 'pin_memory': True}  if args.cuda else {}
-content = image_loader(args.content)
-style = image_loader(args.style)
 
-if args.init == 'content':
-    input_data = content.data    
-else:
-    input_data = torch.randn(content.data.size()).type(torch.cuda.FloatTensor)
+# datasets.ImageFolder
+#styledir = os.path.join(args.data_dir, 'test')
+
+style_dataset = datasets.ImageFolder(args.data_dir,
+        transforms.Compose([transforms.CenterCrop(args.image_size), transforms.ToTensor()])
+        )
+
+style_loader = torch.utils.data.DataLoader(
+        style_dataset, batch_size=args.batch_size, shuffle=True, **kwargs
+        )
+
+content = image_loader(args.content)
+#style = image_loader(args.style)
+
+#if args.init == 'content':
+input_data = content.data    
+#else:
+#    input_data = torch.randn(content.data.size()).type(torch.cuda.FloatTensor)
 input_param = nn.Parameter(input_data)
 optimizer = optim.LBFGS([input_param])
 
 Fc = vgg(content)
-Fs = vgg(style)
+#Fs = vgg(style)
 
+Gc1 = gram_matrix(Fc.relu1_2)
+Gc2 = gram_matrix(Fc.relu2_2)
+Gc3 = gram_matrix(Fc.relu3_3)
+Gc4 = gram_matrix(Fc.relu4_3)
+Gs1 = Variable(torch.cuda.FloatTensor(Gc1.size()).zero_())
+Gs2 = Variable(torch.cuda.FloatTensor(Gc2.size()).zero_())
+Gs3 = Variable(torch.cuda.FloatTensor(Gc3.size()).zero_())
+Gs4 = Variable(torch.cuda.FloatTensor(Gc4.size()).zero_())
+for batch_idx, (images, _) in enumerate(style_loader):
+    images = Variable(images)
+    if args.cuda:
+        images = images.cuda()
+    Fs = vgg(images)
+    Gs1 += gram_matrix(Fs.relu1_2)
+    Gs2 += gram_matrix(Fs.relu2_2)
+    Gs3 += gram_matrix(Fs.relu3_3)
+    Gs4 += gram_matrix(Fs.relu4_3)
+    print ('load {}th image'.format(batch_idx), "\r", end="")
+print("")
+Gs1 /= len(style_dataset)
+Gs2 /= len(style_dataset)
+Gs3 /= len(style_dataset)
+Gs4 /= len(style_dataset)
+    
 loss_ = []
 print_flag = [0]
 if not os.path.exists(args.out_dir):
@@ -94,12 +134,16 @@ for epoch in range(args.epochs):
         optimizer.zero_grad()
 
         Fi = vgg(input_param)
-
-        Lc = content_loss(Fi.relu4_3, Fc.relu4_3, args.content_weight)
-        Ls1 = style_loss(Fi.relu1_2, Fs.relu1_2, args.style_weight)
-        Ls2 = style_loss(Fi.relu2_2, Fs.relu2_2, args.style_weight)
-        Ls3 = style_loss(Fi.relu3_3, Fs.relu3_3, args.style_weight)
-        Ls4 = style_loss(Fi.relu4_3, Fs.relu4_3, args.style_weight)
+        Gi1 = gram_matrix(Fi.relu1_2)
+        Gi2 = gram_matrix(Fi.relu2_2)
+        Gi3 = gram_matrix(Fi.relu3_3)
+        Gi4 = gram_matrix(Fi.relu4_3)
+        
+        Lc  = mse_loss(Fi.relu4_3, Fc.relu4_3) * args.content_weight
+        Ls1 = mse_loss(Gi1, Gs1) * args.style_weight
+        Ls2 = mse_loss(Gi2, Gs2) * args.style_weight
+        Ls3 = mse_loss(Gi3, Gs3) * args.style_weight
+        Ls4 = mse_loss(Gi4, Gs4) * args.style_weight
 
         Lc.backward( retain_graph=True)
         Ls1.backward(retain_graph=True)
