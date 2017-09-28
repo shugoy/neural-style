@@ -1,2 +1,7 @@
 output/
 __pycache__
+*.jpg
+*.png
+*.pts
+*.zip
+*.mp4

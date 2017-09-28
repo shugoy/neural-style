@@ -118,10 +118,10 @@ for batch_idx, (images, _) in enumerate(style_loader):
     Gs4 += gram_matrix(Fs.relu4_3)
     print ('load {}th image'.format(batch_idx), "\r", end="")
 print("")
-Gs1 /= len(style_dataset)
-Gs2 /= len(style_dataset)
-Gs3 /= len(style_dataset)
-Gs4 /= len(style_dataset)
+Gs1 /= len(style_loader.dataset)
+Gs2 /= len(style_loader.dataset)
+Gs3 /= len(style_loader.dataset)
+Gs4 /= len(style_loader.dataset)
     
 loss_ = []
 print_flag = [0]
@@ -152,7 +152,7 @@ for epoch in range(args.epochs):
         Ls4.backward(retain_graph=True)
         loss = Lc + Ls1 + Ls2 + Ls3 + Ls4
         if print_flag[0]:
-            print ('epoch {} Lc:{:4f}, Ls1:{:4f}, Ls2:{:4f}, Ls3:{:4f}, Ls4:{:4f}'.format(epoch, Lc.data[0], Ls1.data[0], Ls2.data[0], Ls3.data[0], Ls4.data[0]))
+            print ('epoch {} Lc:{:.2e}, Ls1:{:.2e}, Ls2:{:.2e}, Ls3:{:.2e}, Ls4:{:.2e}'.format(epoch, Lc.data[0], Ls1.data[0], Ls2.data[0], Ls3.data[0], Ls4.data[0]))
             loss_.append(loss.data[0])
             print_flag[0] = False
         return loss
