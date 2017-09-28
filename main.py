@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import csv
 from PIL import Image
 import numpy as np
 from visdom import Visdom
@@ -19,10 +20,11 @@ import matplotlib.pyplot as plt
 plt.style.use('bmh')
 
 parser = argparse.ArgumentParser(description='PyTorch Neural Style')
-parser.add_argument('--content', default='content.png', type=str, help='content image')
-parser.add_argument('--style', default='style.png', type=str, help='style image')
+parser.add_argument('--content', default='images/content-images/brad_pitt.jpg', type=str, help='content image')
+parser.add_argument('--style', default='images/style-images/starry_night.jpg', type=str, help='style image')
 parser.add_argument('--mask', default='', type=str, help='mask image')
 # parser.add_argument('--out-dir', default='out', type=str, help='output image name')
+parser.add_argument('--saved-loss', default='loss.npz', type=str, help='save loss array')
 parser.add_argument('--image-size', type=int, default=256, metavar='N', help='image size ')
 parser.add_argument('--epochs', type=int, default=50, metavar='N', help='num epochs ')
 parser.add_argument('--start-epoch', type=int, default=0, metavar='N', help='num epochs ')
@@ -116,6 +118,7 @@ optimizer = optim.LBFGS([input_param])
 Fc = vgg(content)
 Fs = vgg(style)
 
+
 viz = Visdom()
 viz.text('style_weight:{:.2e}\ncontent_weight:{:.2e}'.format(args.style_weight, args.content_weight))
 # viz.text('content_weight:{}'.format(args.content_weight))
@@ -123,12 +126,14 @@ textwindow = viz.text('')
 imageWindow = viz.images(input_param.data.cpu().numpy())
 styleLossWindow = viz.line(Y=np.array([0]))
 contentLossWindow = viz.line(Y=np.array([0]))
-loss_style = np.array([])
-loss_content = np.array([])
+loss_style = []
+loss_content = []
 if args.start_epoch > 0:
     temp = np.load(args.saved_loss)
-    loss_style = temp['style']
-    loss_content = temp['content']
+    loss_style = list(temp['style'])
+    loss_content = list(temp['content'])
+
+
 
 print_flag = [0]
 # if not os.path.exists(args.out_dir):
@@ -161,8 +166,8 @@ for epoch in range(args.start_epoch, args.epochs):
         if print_flag[0]:
             print ('epoch {} Lc:{:.2e}, Ls1:{:.2e}, Ls2:{:.2e}, Ls3:{:.2e}, Ls4:{:.2e}, Ls5:{:.2e}'.format(
 		epoch, Lc.data[0], Ls1.data[0], Ls2.data[0], Ls3.data[0], Ls4.data[0], Ls5.data[0]))
-            loss_style = np.append(loss_style,Ls.data[0])
-            loss_content = np.append(loss_content, Lc.data[0])
+            loss_style.append(Ls.data[0])
+            loss_content.append(Lc.data[0])
             viz.text('Lc:{:.2e}\n Ls1:{:.2e}\n Ls2:{:.2e}\n Ls3:{:.2e}\n Ls4:{:.2e}\n Ls5:{:.2e}'.format(
 		epoch, Lc.data[0], Ls1.data[0], Ls2.data[0], Ls3.data[0], Ls4.data[0], Ls5.data[0]),
             win=textwindow, opts=dict(title='epoch_{}'.format(epoch))
@@ -176,8 +181,8 @@ for epoch in range(args.start_epoch, args.epochs):
     input_param.data.clamp_(0,1)
     
     viz.images(input_param.data.cpu().numpy(), win=imageWindow, opts=dict(title='epoch_{}'.format(epoch)))
-    viz.line(Y=loss_style, X=np.array(range(epoch+1)),win=styleLossWindow, opts=dict(title='style loss epoch:{}'.format(epoch)))
-    viz.line(Y=loss_content, X=np.array(range(epoch+1)),win=contentLossWindow, opts=dict(title='content loss epoch_{}'.format(epoch)))
-    np.savez(args.saved_loss, style=loss_style, content=loss_content)
+    viz.line(Y=np.array(loss_style), X=np.array(range(epoch+1)),win=styleLossWindow, opts=dict(title='style loss epoch:{}'.format(epoch)))
+    viz.line(Y=np.array(loss_content), X=np.array(range(epoch+1)),win=contentLossWindow, opts=dict(title='content loss epoch_{}'.format(epoch)))
+    np.savez(args.saved_loss, style=np.array(loss_style), content=np.array(loss_content))
    
 print ('finish')
